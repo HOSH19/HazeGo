@@ -14,9 +14,9 @@ const body = Source_Sans_3({
 });
 
 export const metadata: Metadata = {
-  title: "HazeGoOut — SG beta outdoor air quality planner",
+  title: "HazeGoOut — SG outdoor air quality planner [beta]",
   description:
-    "SG beta outdoor air quality planner. Pick your region for outdoors OK vs stay indoors time windows.",
+    "SG outdoor air quality planner [beta]. Pick your region for outdoors OK vs stay indoors time windows.",
 };
 
 export default function RootLayout({

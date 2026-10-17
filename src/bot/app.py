@@ -107,7 +107,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     set_subscribed(update.effective_chat.id, True)
     await update.message.reply_text(
         "🌫 <b>Welcome to HazeGoOut!</b>\n"
-        "SG beta outdoor air quality planner.\n\n"
+        "SG outdoor air quality planner [beta].\n\n"
         f"{COMMANDS_HTML}\n\n"
         "👉 Send /plan to get today’s windows.",
         parse_mode=ParseMode.HTML,
