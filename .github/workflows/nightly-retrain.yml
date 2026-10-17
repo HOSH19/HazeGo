@@ -59,6 +59,11 @@ jobs:
               print("Quality gate rejected new weights; skipping commit of models/current.joblib")
           PY
 
+      - name: Export web outlook JSON
+        run: |
+          set -euo pipefail
+          python -m src.predict.export_outlook
+
       - name: Commit updated artifacts
         run: |
           set -euo pipefail
@@ -68,8 +73,8 @@ jobs:
           ACCEPTED=$(python -c "import json; print(json.load(open('models/retrain_status.json'))['accepted'])")
           MAE=$(python -c "import json; print(json.load(open('models/retrain_status.json'))['meta'].get('holdout_mae'))")
 
-          # Always allow history + metrics updates; only commit current model if accepted
-          git add data/history.parquet data/retrain_metrics.csv models/meta.json models/retrain_status.json || true
+          # Always allow history + metrics + web outlook; only commit current model if accepted
+          git add data/history.parquet data/retrain_metrics.csv models/meta.json models/retrain_status.json web/public/data/outlook.json || true
           if [ "$ACCEPTED" = "True" ]; then
             git add models/current.joblib models/previous.joblib || true
           fi

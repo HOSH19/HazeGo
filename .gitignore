@@ -17,3 +17,6 @@ build/
 src/**/__pycache__/
 .idea/
 .vscode/
+web/node_modules/
+web/.next/
+web/out/

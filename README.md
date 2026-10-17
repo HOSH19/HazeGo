@@ -1,17 +1,14 @@
 # HazeGo
 
-Telegram bot for outdoor-active people in Singapore. Send a **trigger** (`/plan` or `plan` / `haze`) and it asks **where you’ll spend most of the day**, then returns ML-based **outdoors OK** vs **stay indoors** time windows for that NEA region.
+Outdoor air-quality planner for Singapore — **Telegram bot** + **Vercel web app**.
 
-Nightly, **GitHub Actions** retrains a LightGBM multi-horizon PM2.5 model and **commits updated weights** into `models/current.joblib`.
+Pick where you’ll spend most of the day; get ML-based **outdoors OK** vs **stay indoors** time windows. Nightly GitHub Actions retrains LightGBM, commits `models/current.joblib`, and refreshes `web/public/data/outlook.json` for the site.
 
 ## How it works
 
-1. You message the bot: `/plan` (or `plan` / `haze`)
-2. Bot asks: “Where are you going to spend most of your day?”
-3. You tap **North / South / East / West / Central** (NEA regions)
-4. Bot forecasts hourly 1-hr PM2.5 for the rest of today → outdoor / indoor windows
-5. **~23:30 SGT** — Actions refreshes history, retrains, and commits `models/` if the quality gate passes
-6. Optional: set `GIT_PULL_ON_PLAN=true` so each `/plan` pulls latest weights first
+1. **Web:** open the site → tap a region → see today’s plan (+ live PM2.5)
+2. **Telegram:** send `/plan` (or `plan` / `haze`) → tap a region → same style of plan
+3. **~23:30 SGT:** Actions ingests NEA data, retrains, quality-gates, exports web outlook JSON
 
 ## Quick start
 
@@ -60,6 +57,29 @@ python -m src.bot.app
 
 4. Open your bot in Telegram → send `/plan` (or `plan`) → pick a region
 
+### 4. Web app (local)
+
+```bash
+# refresh outlook JSON from the trained model
+python -m src.predict.export_outlook
+
+cd web
+npm install
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+### 5. Deploy to Vercel
+
+1. Import the GitHub repo in [Vercel](https://vercel.com/new)
+2. Set **Root Directory** to `web`
+3. Framework: Next.js (auto)
+4. Optional env: `DATA_GOV_API_KEY` (higher rate limits for `/api/pm25`)
+5. Deploy
+
+The site reads `public/data/outlook.json` (updated by nightly Actions) and live NEA readings via `/api/pm25`.
+
 ### Triggers & commands
 
 | Message | Action |
@@ -87,21 +107,18 @@ Committed on success:
 - `models/meta.json` — train metadata
 - `data/history.parquet` — training history
 - `data/retrain_metrics.csv` — append-only MAE log
+- `web/public/data/outlook.json` — web app day outlook
 
 Optional on the bot host: `GIT_PULL_ON_PLAN=true` to pull latest committed weights before each plan.
 
 ## Project layout
 
 ```
-src/
-  ingest/     # NEA PM2.5 + weather → history.parquet
-  features/   # lags / rolling / calendar features
-  train/      # retrain_daily (used by Actions)
-  predict/    # load model → hourly outlook
-  advice/     # outdoor / indoor windows
-  bot/        # Telegram + morning scheduler
-  db/         # SQLite user prefs / check-ins
-  jobs/       # git pull helper
+src/                 # Python: ingest, train, Telegram bot
+web/                 # Next.js app (deploy Root Directory = web)
+  public/data/outlook.json
+  src/app/api/plan   # region day plan
+  src/app/api/pm25   # live NEA proxy
 .github/workflows/nightly-retrain.yml
 models/current.joblib
 data/history.parquet

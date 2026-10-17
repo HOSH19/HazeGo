@@ -88,10 +88,11 @@ async def ask_region(update: Update, *, preface: str | None = None) -> None:
             logger.exception("model reload after pull failed; keeping previous")
 
     if preface:
-        await update.message.reply_text(preface, parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(preface, parse_mode=ParseMode.HTML)
     await update.message.reply_text(
-        "Where are you going to spend most of your day?",
+        "📍 <b>Where are you going to spend most of your day?</b>",
         reply_markup=region_keyboard(),
+        parse_mode=ParseMode.HTML,
     )
 
 
@@ -99,10 +100,12 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await ask_region(
         update,
         preface=(
-            "Welcome to *HazeGo* — outdoor air-quality planning for Singapore.\n\n"
-            "Send /plan (or message *plan* / *haze*) anytime and I’ll ask which "
-            "NEA region you’ll be in, then give *outdoors OK* vs *stay indoors* windows.\n\n"
-            "Commands: /plan /now /help"
+            "🌫 <b>Welcome to HazeGo</b>\n"
+            "Outdoor air-quality planning for Singapore.\n\n"
+            "Send /plan (or type <b>plan</b> / <b>haze</b>) anytime — "
+            "I’ll ask which NEA region you’ll be in, then share "
+            "<b>outdoors OK</b> vs <b>stay indoors</b> windows.\n\n"
+            "Commands: /plan · /now · /help"
         ),
     )
 
@@ -110,14 +113,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.message
     await update.message.reply_text(
-        "*Triggers* (ask for your area):\n"
-        "/plan — or just type `plan` / `haze`\n\n"
-        "*Other*\n"
-        "/now — live PM2.5 for today’s region\n"
-        "/reload — git pull + reload model\n"
-        "/start — welcome + area ask\n"
-        f"_{DISCLAIMER}_",
-        parse_mode=ParseMode.MARKDOWN,
+        "🧭 <b>Triggers</b> (ask for your area)\n"
+        "• /plan — or type <code>plan</code> / <code>haze</code>\n\n"
+        "📌 <b>Other</b>\n"
+        "• /now — live PM2.5 for today’s region\n"
+        "• /reload — git pull + reload model\n"
+        "• /start — welcome + area ask\n\n"
+        f"<i>{DISCLAIMER}</i>",
+        parse_mode=ParseMode.HTML,
     )
 
 
@@ -149,11 +152,15 @@ async def cmd_now(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await update.message.reply_text("Could not fetch live PM2.5 right now.")
             return
         value = float(row.iloc[0]["pm25"])
-        band = "Outdoors OK" if value <= OUTDOOR_PM25_MAX else "Stay indoors"
+        ok = value <= OUTDOOR_PM25_MAX
+        band = "✅ Outdoors OK" if ok else "🏠 Stay indoors"
         label = REGION_LABELS.get(region, region)
         await update.message.reply_text(
-            f"*{label}* now: *{value:.0f}* µg/m³ 1-hr PM2.5 → *{band}*\n_{DISCLAIMER}_",
-            parse_mode=ParseMode.MARKDOWN,
+            f"⏱ <b>{label} — right now</b>\n\n"
+            f"🌫 <b>{value:.0f}</b> µg/m³ (1-hr PM2.5)\n"
+            f"{band}\n\n"
+            f"<i>{DISCLAIMER}</i>",
+            parse_mode=ParseMode.HTML,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("/now failed")
@@ -190,17 +197,18 @@ async def on_region(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     set_daily_region(chat_id, region, today_sgt().isoformat())
     label = REGION_LABELS[region]
     await query.edit_message_text(
-        f"Got it — planning for *{label}*…", parse_mode=ParseMode.MARKDOWN
+        f"👍 Got it — planning for <b>{label}</b>…",
+        parse_mode=ParseMode.HTML,
     )
 
     try:
         bundle = get_model()
         fc = forecast_today(region, bundle=bundle)
-        text = plan_from_forecast(fc, region).replace("**", "*")
+        text = plan_from_forecast(fc, region)
         await context.bot.send_message(
             chat_id=chat_id,
             text=text,
-            parse_mode=ParseMode.MARKDOWN,
+            parse_mode=ParseMode.HTML,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("forecast failed")

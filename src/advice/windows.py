@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from html import escape
 from typing import Iterable
 
 import pandas as pd
@@ -21,24 +22,73 @@ class DayPlan:
 
     def format_message(self) -> str:
         label = REGION_LABELS.get(self.region, self.region.title())
-        outdoor = _format_ranges(self.outdoor_windows) or "none for the rest of today"
-        indoor = _format_ranges(self.indoor_windows) or "none for the rest of today"
-        peak = ""
+        outdoor_block = _format_range_block(
+            self.outdoor_windows, empty="None for the rest of today"
+        )
+        indoor_block = _format_range_block(
+            self.indoor_windows, empty="None for the rest of today"
+        )
+
+        peak_line = ""
+        avg_line = ""
         if not self.hourly.empty:
             idx = self.hourly["pm25_pred"].idxmax()
             row = self.hourly.loc[idx]
-            peak = (
-                f"\nPeak outlook: ~{row['pm25_pred']:.0f} µg/m³ "
+            peak_line = (
+                f"📈 <b>Peak outlook</b>: ~{row['pm25_pred']:.0f} µg/m³ "
                 f"around {row['timestamp'].strftime('%H:%M')}"
             )
-        return (
-            f"**{label} — today’s outdoor plan**\n"
-            f"Outdoors OK: {outdoor}\n"
-            f"Stay indoors: {indoor}"
-            f"{peak}\n"
-            f"_(threshold ≤ {self.threshold:.0f} µg/m³ 1-hr PM2.5)_\n"
-            f"_{DISCLAIMER}_"
+            avg = float(self.hourly["pm25_pred"].mean())
+            avg_line = f"📊 <b>Average outlook</b>: ~{avg:.0f} µg/m³"
+
+        summary = _summary_line(self)
+
+        parts = [
+            f"🌫 <b>HazeGo — {escape(label)}</b>",
+            "📅 Plan for the rest of today",
+            "",
+            summary,
+            "",
+            "✅ <b>Outdoors OK</b>",
+            outdoor_block,
+            "",
+            "🏠 <b>Stay indoors</b>",
+            indoor_block,
+        ]
+        if peak_line or avg_line:
+            parts.append("")
+            if peak_line:
+                parts.append(peak_line)
+            if avg_line:
+                parts.append(avg_line)
+        parts.extend(
+            [
+                "",
+                f"<i>Threshold: ≤ {self.threshold:.0f} µg/m³ (1-hr PM2.5)</i>",
+                f"<i>{escape(DISCLAIMER)}</i>",
+            ]
         )
+        return "\n".join(parts)
+
+
+def _summary_line(plan: DayPlan) -> str:
+    if plan.hourly.empty:
+        return "⚠️ Not enough forecast data right now."
+    outdoor_h = sum(
+        (end - start).total_seconds() / 3600
+        for start, end in plan.outdoor_windows
+    )
+    indoor_h = sum(
+        (end - start).total_seconds() / 3600
+        for start, end in plan.indoor_windows
+    )
+    if outdoor_h <= 0:
+        return "🔴 <b>Tough air day</b> — better to keep outdoor plans indoors."
+    if indoor_h <= 0:
+        return "🟢 <b>Clear enough</b> — outdoor windows look good."
+    if outdoor_h >= indoor_h:
+        return "🟡 <b>Mixed day</b> — go out in the clearer windows below."
+    return "🟠 <b>Hazy stretch ahead</b> — pick outdoor slots carefully."
 
 
 def _fmt_end(end: datetime) -> str:
@@ -47,12 +97,17 @@ def _fmt_end(end: datetime) -> str:
     return end.strftime("%H:%M")
 
 
-def _format_ranges(ranges: Iterable[tuple[datetime, datetime]]) -> str:
-    parts: list[str] = []
-    for start, end in ranges:
-        # end is exclusive hour end → show clock face of range end
-        parts.append(f"{start.strftime('%H:%M')}–{_fmt_end(end)}")
-    return ", ".join(parts)
+def _format_range_block(
+    ranges: Iterable[tuple[datetime, datetime]], *, empty: str
+) -> str:
+    ranges = list(ranges)
+    if not ranges:
+        return f"• <i>{escape(empty)}</i>"
+    lines = [
+        f"• <b>{start.strftime('%H:%M')}</b> – <b>{_fmt_end(end)}</b>"
+        for start, end in ranges
+    ]
+    return "\n".join(lines)
 
 
 def merge_hours(
