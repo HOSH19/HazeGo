@@ -108,12 +108,12 @@ export function HomeClient() {
         <p>
           Also on Telegram:{" "}
           <a
-            href="https://t.me/HazeGoOut"
+            href="https://t.me/HazeGoOutBot"
             className="underline decoration-white/30 underline-offset-2 hover:text-[var(--foam)]"
             target="_blank"
             rel="noreferrer"
           >
-            @HazeGoOut
+            @HazeGoOutBot
           </a>
         </p>
       </footer>

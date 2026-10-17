@@ -1,0 +1,11 @@
+# Deploy the Telegram bot as an always-on worker from this GitHub repo.
+# Dashboard: https://railway.app → New Project → Deploy from GitHub repo
+# Set root to repo root, use Dockerfile, add env vars (see README).
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
