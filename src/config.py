@@ -39,9 +39,7 @@ LAGS = (1, 2, 3, 6, 12, 24)
 ROLLING_WINDOWS = (3, 6, 12, 24)
 
 OUTDOOR_PM25_MAX = float(os.getenv("OUTDOOR_PM25_MAX", "55"))
-MORNING_HOUR = int(os.getenv("MORNING_HOUR", "6"))
-MORNING_MINUTE = int(os.getenv("MORNING_MINUTE", "30"))
-GIT_PULL_BEFORE_MORNING = os.getenv("GIT_PULL_BEFORE_MORNING", "true").lower() in {
+GIT_PULL_ON_PLAN = os.getenv("GIT_PULL_ON_PLAN", "false").lower() in {
     "1",
     "true",
     "yes",

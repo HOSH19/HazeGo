@@ -1,11 +1,10 @@
-"""HazeGo Telegram bot — morning region check-in and outdoor/indoor day plan."""
+"""HazeGo Telegram bot — on-demand region check-in and outdoor/indoor day plan."""
 
 from __future__ import annotations
 
 import logging
+import re
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -13,26 +12,23 @@ from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
+    MessageHandler,
+    filters,
 )
-from zoneinfo import ZoneInfo
 
 from src.advice.windows import plan_from_forecast
 from src.config import (
     DISCLAIMER,
-    GIT_PULL_BEFORE_MORNING,
-    MORNING_HOUR,
-    MORNING_MINUTE,
+    GIT_PULL_ON_PLAN,
     OUTDOOR_PM25_MAX,
     REGION_LABELS,
     REGIONS,
-    SGT,
     TELEGRAM_BOT_TOKEN,
 )
 from src.db.schema import init_db
 from src.db.users import (
     ensure_user,
     get_daily_region,
-    list_subscribed_chat_ids,
     set_daily_region,
     set_subscribed,
 )
@@ -47,7 +43,12 @@ logging.basicConfig(
 logger = logging.getLogger("hazego")
 
 _MODEL = None
-_scheduler: AsyncIOScheduler | None = None
+
+# Plain-text triggers (any of these → ask for region)
+_TRIGGER_RE = re.compile(
+    r"^\s*(plan|haze|go\s*out|outdoors?|check|today|/plan)\s*$",
+    re.IGNORECASE,
+)
 
 
 def region_keyboard() -> InlineKeyboardMarkup:
@@ -70,52 +71,65 @@ def refresh_model() -> None:
     _MODEL = reload_model()
 
 
-async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def ask_region(update: Update, *, preface: str | None = None) -> None:
     assert update.effective_chat and update.message
-    user = update.effective_user
-    ensure_user(update.effective_chat.id, user.username if user else None)
-    set_subscribed(update.effective_chat.id, True)
-    await update.message.reply_text(
-        "Welcome to *HazeGo* — daily outdoor air-quality planning for Singapore.\n\n"
-        "Each morning I’ll ask where you’ll spend most of the day "
-        "(North / South / East / West / Central — NEA regions).\n"
-        "You’ll get *outdoors OK* and *stay indoors* time windows from an ML forecast "
-        "retrained nightly.\n\n"
-        "Commands: /plan /now /stop /help",
-        parse_mode=ParseMode.MARKDOWN,
+    ensure_user(
+        update.effective_chat.id,
+        update.effective_user.username if update.effective_user else None,
     )
+    set_subscribed(update.effective_chat.id, True)
+
+    if GIT_PULL_ON_PLAN:
+        result = pull_latest()
+        logger.info("git pull on plan: %s", result)
+        try:
+            refresh_model()
+        except Exception:  # noqa: BLE001
+            logger.exception("model reload after pull failed; keeping previous")
+
+    if preface:
+        await update.message.reply_text(preface, parse_mode=ParseMode.MARKDOWN)
     await update.message.reply_text(
         "Where are you going to spend most of your day?",
         reply_markup=region_keyboard(),
+    )
+
+
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await ask_region(
+        update,
+        preface=(
+            "Welcome to *HazeGo* — outdoor air-quality planning for Singapore.\n\n"
+            "Send /plan (or message *plan* / *haze*) anytime and I’ll ask which "
+            "NEA region you’ll be in, then give *outdoors OK* vs *stay indoors* windows.\n\n"
+            "Commands: /plan /now /help"
+        ),
     )
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.message
     await update.message.reply_text(
-        "/start — subscribe + morning-style check-in\n"
-        "/plan — ask region again / refresh today’s plan\n"
+        "*Triggers* (ask for your area):\n"
+        "/plan — or just type `plan` / `haze`\n\n"
+        "*Other*\n"
         "/now — live PM2.5 for today’s region\n"
-        "/stop — unsubscribe from morning asks\n"
+        "/reload — git pull + reload model\n"
+        "/start — welcome + area ask\n"
         f"_{DISCLAIMER}_",
         parse_mode=ParseMode.MARKDOWN,
     )
 
 
-async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    assert update.effective_chat and update.message
-    set_subscribed(update.effective_chat.id, False)
-    await update.message.reply_text("Unsubscribed from morning check-ins. /start to return.")
-
-
 async def cmd_plan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    assert update.effective_chat and update.message
-    ensure_user(update.effective_chat.id)
-    set_subscribed(update.effective_chat.id, True)
-    await update.message.reply_text(
-        "Where are you going to spend most of your day?",
-        reply_markup=region_keyboard(),
-    )
+    await ask_region(update)
+
+
+async def on_trigger_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Any plain-text trigger message starts the area check-in."""
+    assert update.message and update.message.text
+    if _TRIGGER_RE.match(update.message.text):
+        await ask_region(update)
 
 
 async def cmd_now(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -196,61 +210,12 @@ async def on_region(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
 
-async def morning_checkin(application: Application) -> None:
-    logger.info("Running morning check-in job")
-    if GIT_PULL_BEFORE_MORNING:
-        result = pull_latest()
-        logger.info("git pull: %s", result)
-        try:
-            refresh_model()
-        except Exception:  # noqa: BLE001
-            logger.exception("model reload after pull failed; keeping previous")
-
-    text = "Good morning! Where are you going to spend most of your day?"
-    for chat_id in list_subscribed_chat_ids():
-        try:
-            await application.bot.send_message(
-                chat_id=chat_id,
-                text=text,
-                reply_markup=region_keyboard(),
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception("failed to message %s", chat_id)
-
-
 async def post_init(application: Application) -> None:
-    global _scheduler
-    _scheduler = AsyncIOScheduler(timezone=ZoneInfo(SGT))
-    _scheduler.add_job(
-        morning_checkin,
-        CronTrigger(
-            hour=MORNING_HOUR,
-            minute=MORNING_MINUTE,
-            timezone=ZoneInfo(SGT),
-        ),
-        kwargs={"application": application},
-        id="morning_checkin",
-        replace_existing=True,
-    )
-    _scheduler.start()
-    logger.info(
-        "Scheduler started; morning ask at %02d:%02d %s",
-        MORNING_HOUR,
-        MORNING_MINUTE,
-        SGT,
-    )
     try:
         get_model()
         logger.info("Model loaded")
     except Exception:  # noqa: BLE001
-        logger.warning("Model not loaded yet — train before morning ask")
-
-
-async def post_shutdown(application: Application) -> None:
-    global _scheduler
-    if _scheduler is not None:
-        _scheduler.shutdown(wait=False)
-        _scheduler = None
+        logger.warning("Model not loaded yet — run training before /plan")
 
 
 def build_app() -> Application:
@@ -262,24 +227,23 @@ def build_app() -> Application:
         Application.builder()
         .token(TELEGRAM_BOT_TOKEN)
         .post_init(post_init)
-        .post_shutdown(post_shutdown)
         .build()
     )
     application.add_handler(CommandHandler("start", cmd_start))
     application.add_handler(CommandHandler("help", cmd_help))
     application.add_handler(CommandHandler("plan", cmd_plan))
     application.add_handler(CommandHandler("now", cmd_now))
-    application.add_handler(CommandHandler("stop", cmd_stop))
     application.add_handler(CommandHandler("reload", cmd_reload))
     application.add_handler(CallbackQueryHandler(on_region, pattern=r"^region:"))
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, on_trigger_text)
+    )
     return application
 
 
 def main() -> None:
     app = build_app()
-    logger.info(
-        "HazeGo bot starting (morning %02d:%02d SGT)", MORNING_HOUR, MORNING_MINUTE
-    )
+    logger.info("HazeGo bot starting (on-demand /plan trigger; no morning schedule)")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
