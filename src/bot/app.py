@@ -27,7 +27,6 @@ from src.config import (
 from src.db.schema import init_db
 from src.db.users import (
     ensure_user,
-    get_daily_region,
     set_daily_region,
     set_subscribed,
 )
@@ -45,7 +44,7 @@ _MODEL = None
 
 COMMANDS_HTML = (
     "📍 /plan — today’s outdoor / indoor windows\n"
-    "⏱ /now — live PM2.5 right now\n"
+    "⏱ /now — live PM2.5 (pick a region)\n"
     "❓ /help — command list"
 )
 
@@ -55,9 +54,9 @@ _TRIGGER_RE = re.compile(
 )
 
 
-def region_keyboard() -> InlineKeyboardMarkup:
+def region_keyboard(intent: str = "plan") -> InlineKeyboardMarkup:
     buttons = [
-        [InlineKeyboardButton(REGION_LABELS[r], callback_data=f"region:{r}")]
+        [InlineKeyboardButton(REGION_LABELS[r], callback_data=f"{intent}:{r}")]
         for r in REGIONS
     ]
     return InlineKeyboardMarkup(buttons)
@@ -75,7 +74,7 @@ def refresh_model() -> None:
     _MODEL = reload_model()
 
 
-async def ask_region(update: Update) -> None:
+async def ask_region(update: Update, *, intent: str = "plan") -> None:
     assert update.effective_chat and update.message
     ensure_user(
         update.effective_chat.id,
@@ -83,7 +82,7 @@ async def ask_region(update: Update) -> None:
     )
     set_subscribed(update.effective_chat.id, True)
 
-    if GIT_PULL_ON_PLAN:
+    if intent == "plan" and GIT_PULL_ON_PLAN:
         result = pull_latest()
         logger.info("git pull on plan: %s", result)
         try:
@@ -91,9 +90,14 @@ async def ask_region(update: Update) -> None:
         except Exception:  # noqa: BLE001
             logger.exception("model reload after pull failed; keeping previous")
 
+    prompt = (
+        "📍 <b>Where will you spend most of today?</b>"
+        if intent == "plan"
+        else "📍 <b>Where are you right now?</b>"
+    )
     await update.message.reply_text(
-        "📍 <b>Where will you spend most of today?</b>",
-        reply_markup=region_keyboard(),
+        prompt,
+        reply_markup=region_keyboard(intent),
         parse_mode=ParseMode.HTML,
     )
 
@@ -123,55 +127,58 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def cmd_plan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await ask_region(update)
+    await ask_region(update, intent="plan")
+
+
+async def cmd_now(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await ask_region(update, intent="now")
 
 
 async def on_trigger_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.message and update.message.text
     if _TRIGGER_RE.match(update.message.text):
-        await ask_region(update)
+        await ask_region(update, intent="plan")
 
 
-async def cmd_now(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    assert update.effective_chat and update.message
-    chat_id = update.effective_chat.id
-    ensure_user(chat_id)
-    region = get_daily_region(chat_id, today_sgt().isoformat())
-    if not region:
-        await update.message.reply_text(
-            "📍 Pick a region first — send /plan",
-            reply_markup=region_keyboard(),
-        )
-        return
+async def send_live_now(chat_id: int, region: str, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         live = fetch_pm25_latest()
         row = live[live["region"] == region]
         if row.empty:
-            await update.message.reply_text("⚠️ Can’t fetch live PM2.5 right now.")
+            await context.bot.send_message(
+                chat_id=chat_id, text="⚠️ Can’t fetch live PM2.5 right now."
+            )
             return
         value = float(row.iloc[0]["pm25"])
         ok = value <= OUTDOOR_PM25_MAX
         band = "✅ Outdoors OK" if ok else "🏠 Stay indoors"
         label = REGION_LABELS.get(region, region)
-        await update.message.reply_text(
-            f"⏱ <b>{label} now</b>\n"
-            f"🌫 <b>{value:.0f}</b> µg/m³\n"
-            f"{band}",
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"⏱ <b>{label} now</b>\n"
+                f"🌫 <b>{value:.0f}</b> µg/m³\n"
+                f"{band}"
+            ),
             parse_mode=ParseMode.HTML,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("/now failed")
-        await update.message.reply_text(f"⚠️ Live fetch failed: {exc}")
+        await context.bot.send_message(
+            chat_id=chat_id, text=f"⚠️ Live fetch failed: {exc}"
+        )
 
 
-async def on_region(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def on_region_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     assert query and query.data and update.effective_chat
     await query.answer()
-    if not query.data.startswith("region:"):
-        return
-    region = query.data.split(":", 1)[1]
-    if region not in REGIONS:
+
+    intent, _, region = query.data.partition(":")
+    # Back-compat with older keyboards that used region:
+    if intent == "region":
+        intent = "plan"
+    if intent not in {"plan", "now"} or region not in REGIONS:
         await query.edit_message_text("⚠️ Unknown region.")
         return
 
@@ -179,11 +186,19 @@ async def on_region(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ensure_user(chat_id)
     set_daily_region(chat_id, region, today_sgt().isoformat())
     label = REGION_LABELS[region]
+
+    if intent == "now":
+        await query.edit_message_text(
+            f"⏱ Checking <b>{label}</b>…",
+            parse_mode=ParseMode.HTML,
+        )
+        await send_live_now(chat_id, region, context)
+        return
+
     await query.edit_message_text(
         f"👍 Planning for <b>{label}</b>…",
         parse_mode=ParseMode.HTML,
     )
-
     try:
         bundle = get_model()
         fc = forecast_today(region, bundle=bundle)
@@ -224,7 +239,9 @@ def build_app() -> Application:
     application.add_handler(CommandHandler("help", cmd_help))
     application.add_handler(CommandHandler("plan", cmd_plan))
     application.add_handler(CommandHandler("now", cmd_now))
-    application.add_handler(CallbackQueryHandler(on_region, pattern=r"^region:"))
+    application.add_handler(
+        CallbackQueryHandler(on_region_callback, pattern=r"^(plan|now|region):")
+    )
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, on_trigger_text)
     )
