@@ -14,7 +14,7 @@ const body = Source_Sans_3({
 });
 
 export const metadata: Metadata = {
-  title: "HazeGo — Should you go out today?",
+  title: "HazeGoOut — Should you go out today?",
   description:
     "Singapore outdoor air-quality planner. Pick your region for outdoors OK vs stay indoors time windows.",
 };

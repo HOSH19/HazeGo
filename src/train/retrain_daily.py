@@ -232,7 +232,7 @@ def retrain(
 def main() -> None:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Retrain HazeGo LightGBM models")
+    parser = argparse.ArgumentParser(description="Retrain HazeGoOut LightGBM models")
     parser.add_argument(
         "--no-refresh",
         action="store_true",

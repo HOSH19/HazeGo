@@ -1,4 +1,4 @@
-# HazeGo
+# HazeGoOut
 
 Outdoor air-quality planner for Singapore — **Telegram bot** + **Vercel web app**.
 

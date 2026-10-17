@@ -1,4 +1,4 @@
-"""Shared configuration for HazeGo."""
+"""Shared configuration for HazeGoOut."""
 
 from __future__ import annotations
 

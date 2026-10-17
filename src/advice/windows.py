@@ -44,7 +44,7 @@ class DayPlan:
         summary = _summary_line(self)
 
         parts = [
-            f"🌫 <b>HazeGo — {escape(label)}</b>",
+            f"🌫 <b>HazeGoOut — {escape(label)}</b>",
             "📅 Plan for the rest of today",
             "",
             summary,

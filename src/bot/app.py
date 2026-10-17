@@ -1,4 +1,4 @@
-"""HazeGo Telegram bot — on-demand region check-in and outdoor/indoor day plan."""
+"""HazeGoOut Telegram bot — on-demand region check-in and outdoor/indoor day plan."""
 
 from __future__ import annotations
 
@@ -100,7 +100,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await ask_region(
         update,
         preface=(
-            "🌫 <b>Welcome to HazeGo</b>\n"
+            "🌫 <b>Welcome to HazeGoOut</b>\n"
             "Outdoor air-quality planning for Singapore.\n\n"
             "Send /plan (or type <b>plan</b> / <b>haze</b>) anytime — "
             "I’ll ask which NEA region you’ll be in, then share "
@@ -251,7 +251,7 @@ def build_app() -> Application:
 
 def main() -> None:
     app = build_app()
-    logger.info("HazeGo bot starting (on-demand /plan trigger; no morning schedule)")
+    logger.info("HazeGoOut bot starting (on-demand /plan trigger; no morning schedule)")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
