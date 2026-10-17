@@ -6,11 +6,11 @@ Pick where you’ll spend most of the day; get **outdoors OK** vs **stay indoors
 
 | Piece | Where it runs |
 |--------|----------------|
-| Website | **Vercel** (`web/`) |
-| Telegram bot | **Railway** (always-on Docker worker — not your laptop) |
+| Website | **Vercel** (`web/`) — free Hobby plan |
+| Telegram bot | **Vercel webhook** (`/api/telegram`) — same free host, no laptop |
 | Nightly model retrain | **GitHub Actions** (commits updated `models/` + web outlook) |
 
-GitHub stores the code and runs the nightly train job. It does **not** host a 24/7 bot process — that’s what Railway is for.
+GitHub stores code + runs the nightly train. The bot does **not** need an always-on VPS: Telegram pushes updates to Vercel when someone messages the bot.
 
 ## How it works
 
@@ -48,33 +48,24 @@ python -m src.ingest.history --days 14   # with weather
 python -m src.train.retrain_daily --no-refresh
 ```
 
-### 3. Telegram bot (local, optional)
+### 3. Telegram bot on Vercel (free, recommended)
 
-Only for debugging. Production should run on Railway (below).
+The production bot is a **webhook** at `https://hazegoout.vercel.app/api/telegram` — no always-on server, works while your laptop sleeps.
+
+1. In Vercel project **hazegoout** → Settings → Environment Variables, add:
+   - `TELEGRAM_BOT_TOKEN`
+   - optional `DATA_GOV_API_KEY`, `OUTDOOR_PM25_MAX`
+2. Redeploy the site
+3. Point Telegram at the webhook (once):
 
 ```bash
-cp .env.example .env   # set TELEGRAM_BOT_TOKEN (+ optional DATA_GOV_API_KEY)
-python -m src.bot.app
+curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://hazegoout.vercel.app/api/telegram"
 ```
 
-**Important:** only one process may poll Telegram at a time. Stop the local bot before Railway runs, or you’ll get conflicts.
+4. **Stop any local** `python -m src.bot.app` (polling conflicts with the webhook)
+5. Message [@HazeGoOutBot](https://t.me/HazeGoOutBot) → `/start`
 
-### 3b. Host the bot on Railway (always-on)
-
-So the bot works when your laptop is asleep:
-
-1. Push this repo to GitHub (already done)
-2. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo** → select this repo
-3. Railway should detect [`Dockerfile`](Dockerfile) / [`railway.toml`](railway.toml)
-4. Add variables (Variables tab):
-   - `TELEGRAM_BOT_TOKEN` = from BotFather
-   - `DATA_GOV_API_KEY` = optional
-   - `DATABASE_PATH` = `/data/bot.db`
-   - `GIT_PULL_ON_PLAN` = `false`
-5. (Recommended) Add a **Volume** mounted at `/data` so user prefs survive redeploys
-6. Deploy → open [@HazeGoOutBot](https://t.me/HazeGoOutBot) → `/start`
-
-Enable **auto-deploy on push** so nightly Actions model commits wake a fresh bot build.
+Local Python bot (`python -m src.bot.app`) is only for offline debugging. Dockerfile/Railway files remain as an optional paid always-on alternative.
 
 ### 4. Web app (local)
 
