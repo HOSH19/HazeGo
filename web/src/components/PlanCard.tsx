@@ -140,7 +140,7 @@ export function PlanCard({ plan }: { plan: Plan }) {
       </dl>
 
       <p className="text-xs leading-relaxed text-[var(--mist)]/80">
-        Threshold ≤ {plan.threshold} µg/m³ (1-hr PM2.5). ML outlook generated{" "}
+        Threshold ≤ {plan.threshold} µg/m³ (1-hr PM2.5). Outlook generated{" "}
         {new Date(plan.generated_at).toLocaleString("en-SG", {
           timeZone: "Asia/Singapore",
         })}{" "}

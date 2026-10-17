@@ -58,7 +58,7 @@ export function HomeClient() {
         </h1>
         <p className="max-w-md text-[var(--mist)]">
           Pick where you&apos;ll spend most of the day. We&apos;ll show outdoor vs
-          indoor windows from an ML PM2.5 outlook for Singapore.
+          indoor windows from a PM2.5 outlook for Singapore.
         </p>
       </header>
 
@@ -101,8 +101,18 @@ export function HomeClient() {
       {plan && !pending && <PlanCard plan={plan} />}
 
       <footer className="space-y-1 pt-4 text-center text-xs text-[var(--mist)]/70 sm:text-left">
-        <p>Data: NEA via data.gov.sg · Forecast: LightGBM (nightly retrain)</p>
-        <p>Also on Telegram — message the bot with /plan</p>
+        <p>Data: NEA via data.gov.sg · Model: LightGBM (nightly retrain)</p>
+        <p>
+          Also on Telegram:{" "}
+          <a
+            href="https://t.me/HazeGoOut"
+            className="underline decoration-white/30 underline-offset-2 hover:text-[var(--foam)]"
+            target="_blank"
+            rel="noreferrer"
+          >
+            @HazeGoOut
+          </a>
+        </p>
       </footer>
     </div>
   );
