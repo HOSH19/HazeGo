@@ -1,0 +1,2 @@
+date,holdout_mae,persistence_mae,previous_mae,accepted,n_train_rows,n_history_rows
+2026-10-17,27.882180463826273,29.059099280093754,,True,5992,7170
