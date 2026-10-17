@@ -18,7 +18,6 @@ from telegram.ext import (
 
 from src.advice.windows import plan_from_forecast
 from src.config import (
-    DISCLAIMER,
     GIT_PULL_ON_PLAN,
     OUTDOOR_PM25_MAX,
     REGION_LABELS,
@@ -44,9 +43,14 @@ logger = logging.getLogger("hazego")
 
 _MODEL = None
 
-# Plain-text triggers (any of these → ask for region)
+COMMANDS_HTML = (
+    "📍 /plan — today’s outdoor / indoor windows\n"
+    "⏱ /now — live PM2.5 right now\n"
+    "❓ /help — command list"
+)
+
 _TRIGGER_RE = re.compile(
-    r"^\s*(plan|haze|go\s*out|outdoors?|check|today|/plan)\s*$",
+    r"^\s*(plan|haze|go\s*out|outdoors?|check|today)\s*$",
     re.IGNORECASE,
 )
 
@@ -71,7 +75,7 @@ def refresh_model() -> None:
     _MODEL = reload_model()
 
 
-async def ask_region(update: Update, *, preface: str | None = None) -> None:
+async def ask_region(update: Update) -> None:
     assert update.effective_chat and update.message
     ensure_user(
         update.effective_chat.id,
@@ -87,39 +91,33 @@ async def ask_region(update: Update, *, preface: str | None = None) -> None:
         except Exception:  # noqa: BLE001
             logger.exception("model reload after pull failed; keeping previous")
 
-    if preface:
-        await update.message.reply_text(preface, parse_mode=ParseMode.HTML)
     await update.message.reply_text(
-        "📍 <b>Where are you going to spend most of your day?</b>",
+        "📍 <b>Where will you spend most of today?</b>",
         reply_markup=region_keyboard(),
         parse_mode=ParseMode.HTML,
     )
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await ask_region(
-        update,
-        preface=(
-            "🌫 <b>Welcome to HazeGoOut</b>\n"
-            "Outdoor air-quality planning for Singapore.\n\n"
-            "Send /plan (or type <b>plan</b> / <b>haze</b>) anytime — "
-            "I’ll ask which NEA region you’ll be in, then share "
-            "<b>outdoors OK</b> vs <b>stay indoors</b> windows.\n\n"
-            "Commands: /plan · /now · /help"
-        ),
+    assert update.effective_chat and update.message
+    ensure_user(
+        update.effective_chat.id,
+        update.effective_user.username if update.effective_user else None,
+    )
+    set_subscribed(update.effective_chat.id, True)
+    await update.message.reply_text(
+        "🌫 <b>Welcome to HazeGoOut!</b>\n"
+        "SG beta outdoor air quality planner.\n\n"
+        f"{COMMANDS_HTML}\n\n"
+        "👉 Send /plan to get today’s windows.",
+        parse_mode=ParseMode.HTML,
     )
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.message
     await update.message.reply_text(
-        "🧭 <b>Triggers</b> (ask for your area)\n"
-        "• /plan — or type <code>plan</code> / <code>haze</code>\n\n"
-        "📌 <b>Other</b>\n"
-        "• /now — live PM2.5 for today’s region\n"
-        "• /reload — git pull + reload model\n"
-        "• /start — welcome + area ask\n\n"
-        f"<i>{DISCLAIMER}</i>",
+        f"📋 <b>Commands</b>\n{COMMANDS_HTML}",
         parse_mode=ParseMode.HTML,
     )
 
@@ -129,7 +127,6 @@ async def cmd_plan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def on_trigger_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Any plain-text trigger message starts the area check-in."""
     assert update.message and update.message.text
     if _TRIGGER_RE.match(update.message.text):
         await ask_region(update)
@@ -142,43 +139,29 @@ async def cmd_now(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     region = get_daily_region(chat_id, today_sgt().isoformat())
     if not region:
         await update.message.reply_text(
-            "Pick a region first:", reply_markup=region_keyboard()
+            "📍 Pick a region first — send /plan",
+            reply_markup=region_keyboard(),
         )
         return
     try:
         live = fetch_pm25_latest()
         row = live[live["region"] == region]
         if row.empty:
-            await update.message.reply_text("Could not fetch live PM2.5 right now.")
+            await update.message.reply_text("⚠️ Can’t fetch live PM2.5 right now.")
             return
         value = float(row.iloc[0]["pm25"])
         ok = value <= OUTDOOR_PM25_MAX
         band = "✅ Outdoors OK" if ok else "🏠 Stay indoors"
         label = REGION_LABELS.get(region, region)
         await update.message.reply_text(
-            f"⏱ <b>{label} — right now</b>\n\n"
-            f"🌫 <b>{value:.0f}</b> µg/m³ (1-hr PM2.5)\n"
-            f"{band}\n\n"
-            f"<i>{DISCLAIMER}</i>",
+            f"⏱ <b>{label} now</b>\n"
+            f"🌫 <b>{value:.0f}</b> µg/m³\n"
+            f"{band}",
             parse_mode=ParseMode.HTML,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("/now failed")
-        await update.message.reply_text(f"Live fetch failed: {exc}")
-
-
-async def cmd_reload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    assert update.message
-    msg = pull_latest()
-    try:
-        refresh_model()
-        meta = get_model().get("meta") or {}
-        await update.message.reply_text(
-            f"Pulled:\n{msg}\n\nModel MAE={meta.get('holdout_mae')} "
-            f"trained={meta.get('trained_at_utc')}"
-        )
-    except Exception as exc:  # noqa: BLE001
-        await update.message.reply_text(f"Pull finished, reload failed: {exc}\n{msg}")
+        await update.message.reply_text(f"⚠️ Live fetch failed: {exc}")
 
 
 async def on_region(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -189,7 +172,7 @@ async def on_region(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     region = query.data.split(":", 1)[1]
     if region not in REGIONS:
-        await query.edit_message_text("Unknown region.")
+        await query.edit_message_text("⚠️ Unknown region.")
         return
 
     chat_id = update.effective_chat.id
@@ -197,7 +180,7 @@ async def on_region(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     set_daily_region(chat_id, region, today_sgt().isoformat())
     label = REGION_LABELS[region]
     await query.edit_message_text(
-        f"👍 Got it — planning for <b>{label}</b>…",
+        f"👍 Planning for <b>{label}</b>…",
         parse_mode=ParseMode.HTML,
     )
 
@@ -214,7 +197,7 @@ async def on_region(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.exception("forecast failed")
         await context.bot.send_message(
             chat_id=chat_id,
-            text=f"Could not build today’s plan: {exc}",
+            text=f"⚠️ Couldn’t build today’s plan: {exc}",
         )
 
 
@@ -241,7 +224,6 @@ def build_app() -> Application:
     application.add_handler(CommandHandler("help", cmd_help))
     application.add_handler(CommandHandler("plan", cmd_plan))
     application.add_handler(CommandHandler("now", cmd_now))
-    application.add_handler(CommandHandler("reload", cmd_reload))
     application.add_handler(CallbackQueryHandler(on_region, pattern=r"^region:"))
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, on_trigger_text)
@@ -252,7 +234,7 @@ def build_app() -> Application:
 def main() -> None:
     app = build_app()
     logger.info("HazeGoOut bot starting (on-demand /plan trigger; no morning schedule)")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 
 if __name__ == "__main__":

@@ -53,6 +53,9 @@ export function HomeClient() {
     <div className="mx-auto flex w-full max-w-xl flex-col gap-8 px-4 py-10 sm:py-14">
       <header className="space-y-3 text-center sm:text-left">
         <p className="text-sm tracking-[0.25em] text-[var(--sand)]">HAZEGOOUT</p>
+        <p className="text-sm text-[var(--mist)]">
+          SG beta outdoor air quality planner
+        </p>
         <h1 className="font-[family-name:var(--font-display)] text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
           Should you go out today?
         </h1>
