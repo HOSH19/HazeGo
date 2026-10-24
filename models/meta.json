@@ -1,8 +1,8 @@
 {
-  "trained_at_utc": "2026-10-23T19:29:47.702355+00:00",
-  "n_train_rows": 6647,
-  "n_holdout_rows": 1173,
-  "n_history_rows": 7940,
+  "trained_at_utc": "2026-10-24T18:22:33.257687+00:00",
+  "n_train_rows": 6744,
+  "n_holdout_rows": 1191,
+  "n_history_rows": 8055,
   "horizons": [
     1,
     2,
@@ -29,9 +29,9 @@
     23,
     24
   ],
-  "holdout_mae": 26.5787380306275,
-  "persistence_mae": 27.222084646555604,
-  "previous_holdout_mae": 26.66362472384212,
+  "holdout_mae": 24.759108219330574,
+  "persistence_mae": 23.879153743907843,
+  "previous_holdout_mae": 24.797432421234113,
   "accepted": true,
-  "beats_persistence": true
+  "beats_persistence": false
 }
